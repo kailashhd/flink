@@ -70,7 +70,6 @@ import static org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducerBase
  *
  * All methods and constructors in this class are marked with the approach they are needed for.
  */
-
 public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunction<T>, RichFunction, CheckpointedFunction {
 
 	/**
@@ -92,9 +91,9 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 * @param producerConfig Properties with the producer configuration.
 	 */
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-																					   String topicId,
-																					   KeyedSerializationSchema<T> serializationSchema,
-																					   Properties producerConfig) {
+											String topicId,
+											KeyedSerializationSchema<T> serializationSchema,
+											Properties producerConfig) {
 		return writeToKafkaWithTimestamps(inStream, topicId, serializationSchema, producerConfig, new FlinkFixedPartitioner<T>());
 	}
 
@@ -111,9 +110,9 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 * @param producerConfig Properties with the producer configuration.
 	 */
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-																					   String topicId,
-																					   SerializationSchema<T> serializationSchema,
-																					   Properties producerConfig) {
+		String topicId,
+		SerializationSchema<T> serializationSchema,
+		Properties producerConfig) {
 		return writeToKafkaWithTimestamps(inStream, topicId, new KeyedSerializationSchemaWrapper<>(serializationSchema), producerConfig, new FlinkFixedPartitioner<T>());
 	}
 
@@ -130,10 +129,10 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 *  @param customPartitioner A serializable partitioner for assigning messages to Kafka partitions.
 	 */
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-																					   String topicId,
-																					   KeyedSerializationSchema<T> serializationSchema,
-																					   Properties producerConfig,
-																					   FlinkKafkaPartitioner<T> customPartitioner) {
+											String topicId,
+											KeyedSerializationSchema<T> serializationSchema,
+											Properties producerConfig,
+											FlinkKafkaPartitioner<T> customPartitioner) {
 
 		GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
 		FlinkKafkaProducer010<T> kafkaProducer = new FlinkKafkaProducer010<>(topicId, serializationSchema, producerConfig, customPartitioner);
@@ -249,10 +248,10 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 */
 	@Deprecated
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-																					   String topicId,
-																					   KeyedSerializationSchema<T> serializationSchema,
-																					   Properties producerConfig,
-																					   KafkaPartitioner<T> customPartitioner) {
+											String topicId,
+											KeyedSerializationSchema<T> serializationSchema,
+											Properties producerConfig,
+											KafkaPartitioner<T> customPartitioner) {
 
 		GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
 		FlinkKafkaProducer010<T> kafkaProducer =
@@ -331,9 +330,9 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 				internalProducer.pendingRecords++;
 			}
 		}
-		LOG.info("This is where I need to override the callback.");
+		// Add a new callback so that the latency can be calculated.
 		long startTime = System.currentTimeMillis();
-		Callback cb = new PerfCallback<>(startTime,this);
+		Callback cb = new LatencyCallback<>(startTime,this);
 		internalProducer.producer.send(record, cb);
 	}
 
@@ -487,10 +486,10 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 		}
 	}
 
-	private static final class PerfCallback<T> implements Callback {
+	private static final class LatencyCallback<T> implements Callback {
 		private final long start;
 		private final FlinkKafkaProducerBase wrappedProducerBase;
-		public PerfCallback(long start, FlinkKafkaProducer010<T> producer) {
+		public LatencyCallback(long start, FlinkKafkaProducer010<T> producer) {
 			this.start = start;
 			this.wrappedProducerBase = (FlinkKafkaProducerBase) producer.userFunction;
 		}
