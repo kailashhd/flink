@@ -41,7 +41,8 @@ import org.apache.flink.streaming.util.serialization.KeyedSerializationSchema;
 import org.apache.flink.streaming.util.serialization.KeyedSerializationSchemaWrapper;
 import org.apache.flink.streaming.util.serialization.SerializationSchema;
 import org.apache.kafka.clients.producer.ProducerRecord;
-
+import org.apache.kafka.clients.producer.Callback;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import static org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducerBase.getPartitionsByTopic;
 import static org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducerBase.getPropertiesFromBrokerList;
 
@@ -69,6 +70,7 @@ import static org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducerBase
  *
  * All methods and constructors in this class are marked with the approach they are needed for.
  */
+
 public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunction<T>, RichFunction, CheckpointedFunction {
 
 	/**
@@ -90,9 +92,9 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 * @param producerConfig Properties with the producer configuration.
 	 */
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-																					String topicId,
-																					KeyedSerializationSchema<T> serializationSchema,
-																					Properties producerConfig) {
+																					   String topicId,
+																					   KeyedSerializationSchema<T> serializationSchema,
+																					   Properties producerConfig) {
 		return writeToKafkaWithTimestamps(inStream, topicId, serializationSchema, producerConfig, new FlinkFixedPartitioner<T>());
 	}
 
@@ -109,9 +111,9 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 * @param producerConfig Properties with the producer configuration.
 	 */
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-																					String topicId,
-																					SerializationSchema<T> serializationSchema,
-																					Properties producerConfig) {
+																					   String topicId,
+																					   SerializationSchema<T> serializationSchema,
+																					   Properties producerConfig) {
 		return writeToKafkaWithTimestamps(inStream, topicId, new KeyedSerializationSchemaWrapper<>(serializationSchema), producerConfig, new FlinkFixedPartitioner<T>());
 	}
 
@@ -128,10 +130,10 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 *  @param customPartitioner A serializable partitioner for assigning messages to Kafka partitions.
 	 */
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-																					String topicId,
-																					KeyedSerializationSchema<T> serializationSchema,
-																					Properties producerConfig,
-																					FlinkKafkaPartitioner<T> customPartitioner) {
+																					   String topicId,
+																					   KeyedSerializationSchema<T> serializationSchema,
+																					   Properties producerConfig,
+																					   FlinkKafkaPartitioner<T> customPartitioner) {
 
 		GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
 		FlinkKafkaProducer010<T> kafkaProducer = new FlinkKafkaProducer010<>(topicId, serializationSchema, producerConfig, customPartitioner);
@@ -215,7 +217,7 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	public FlinkKafkaProducer010(String topicId, KeyedSerializationSchema<T> serializationSchema, Properties producerConfig) {
 		this(topicId, serializationSchema, producerConfig, new FlinkFixedPartitioner<T>());
 	}
-	
+
 	/**
 	 * Create Kafka producer
 	 *
@@ -247,14 +249,14 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 */
 	@Deprecated
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-																					String topicId,
-																					KeyedSerializationSchema<T> serializationSchema,
-																					Properties producerConfig,
-																					KafkaPartitioner<T> customPartitioner) {
+																					   String topicId,
+																					   KeyedSerializationSchema<T> serializationSchema,
+																					   Properties producerConfig,
+																					   KafkaPartitioner<T> customPartitioner) {
 
 		GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
 		FlinkKafkaProducer010<T> kafkaProducer =
-				new FlinkKafkaProducer010<>(topicId, serializationSchema, producerConfig, new FlinkKafkaDelegatePartitioner<>(customPartitioner));
+			new FlinkKafkaProducer010<>(topicId, serializationSchema, producerConfig, new FlinkKafkaDelegatePartitioner<>(customPartitioner));
 		SingleOutputStreamOperator<Object> transformation = inStream.transform("FlinKafkaProducer 0.10.x", objectTypeInfo, kafkaProducer);
 		return new FlinkKafkaProducer010Configuration<>(transformation, kafkaProducer);
 	}
@@ -329,7 +331,10 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 				internalProducer.pendingRecords++;
 			}
 		}
-		internalProducer.producer.send(record, internalProducer.callback);
+		LOG.info("This is where I need to override the callback.");
+		long startTime = System.currentTimeMillis();
+		Callback cb = new PerfCallback<>(startTime,this);
+		internalProducer.producer.send(record, cb);
 	}
 
 
@@ -482,5 +487,20 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 		}
 	}
 
-
+	private static final class PerfCallback<T> implements Callback {
+		private final long start;
+		private final FlinkKafkaProducerBase wrappedProducerBase;
+		public PerfCallback(long start, FlinkKafkaProducer010<T> producer) {
+			this.start = start;
+			this.wrappedProducerBase = (FlinkKafkaProducerBase) producer.userFunction;
+		}
+		public void onCompletion(RecordMetadata metadata, Exception exception) {
+			long now = System.currentTimeMillis();
+			long latency = (now - start);
+			wrappedProducerBase.histogram.update(latency);
+			if (exception != null) {
+				exception.printStackTrace();
+			}
+		}
+	}
 }

@@ -41,6 +41,9 @@ import org.apache.flink.streaming.connectors.kafka.partitioner.FlinkKafkaDelegat
 import org.apache.flink.streaming.connectors.kafka.partitioner.FlinkKafkaPartitioner;
 import org.apache.flink.streaming.util.serialization.KeyedSerializationSchema;
 import org.apache.flink.util.NetUtils;
+import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
+import org.apache.flink.metrics.Histogram;
+import com.codahale.metrics.SlidingWindowReservoir;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -70,6 +73,8 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 	private static final Logger LOG = LoggerFactory.getLogger(FlinkKafkaProducerBase.class);
 
 	private static final long serialVersionUID = 1L;
+
+	public Histogram histogram;
 
 	/**
 	 * Configuration key for disabling the metrics reporting.
@@ -212,17 +217,22 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 		producer = getKafkaProducer(this.producerConfig);
 
 		RuntimeContext ctx = getRuntimeContext();
+		com.codahale.metrics.Histogram histogram =
+			new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500));
+		this.histogram = ctx.getMetricGroup()
+			.histogram("LatencyHistogram", new DropwizardHistogramWrapper(histogram));
+
 
 		if(null != flinkKafkaPartitioner) {
 			if(flinkKafkaPartitioner instanceof FlinkKafkaDelegatePartitioner) {
 				((FlinkKafkaDelegatePartitioner) flinkKafkaPartitioner).setPartitions(
-						getPartitionsByTopic(this.defaultTopicId, this.producer));
+					getPartitionsByTopic(this.defaultTopicId, this.producer));
 			}
 			flinkKafkaPartitioner.open(ctx.getIndexOfThisSubtask(), ctx.getNumberOfParallelSubtasks());
 		}
 
 		LOG.info("Starting FlinkKafkaProducer ({}/{}) to produce into default topic {}",
-				ctx.getIndexOfThisSubtask() + 1, ctx.getNumberOfParallelSubtasks(), defaultTopicId);
+			ctx.getIndexOfThisSubtask() + 1, ctx.getNumberOfParallelSubtasks(), defaultTopicId);
 
 		// register Kafka metrics to Flink accumulators
 		if (!Boolean.parseBoolean(producerConfig.getProperty(KEY_DISABLE_METRICS, "false"))) {
@@ -248,6 +258,7 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 			callback = new Callback() {
 				@Override
 				public void onCompletion(RecordMetadata metadata, Exception e) {
+					LOG.info("This is where stuff is written");
 					if (e != null) {
 						LOG.error("Error while sending record to Kafka: " + e.getMessage(), e);
 					}
@@ -259,6 +270,7 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 			callback = new Callback() {
 				@Override
 				public void onCompletion(RecordMetadata metadata, Exception exception) {
+					// LOG.info("This is where stuff is written");
 					if (exception != null && asyncException == null) {
 						asyncException = exception;
 					}
@@ -297,16 +309,17 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 			record = new ProducerRecord<>(targetTopic, serializedKey, serializedValue);
 		} else {
 			record = new ProducerRecord<>(
-					targetTopic,
-					flinkKafkaPartitioner.partition(next, serializedKey, serializedValue, targetTopic, partitions),
-					serializedKey,
-					serializedValue);
+				targetTopic,
+				flinkKafkaPartitioner.partition(next, serializedKey, serializedValue, targetTopic, partitions),
+				serializedKey,
+				serializedValue);
 		}
 		if (flushOnCheckpoint) {
 			synchronized (pendingRecordsLock) {
 				pendingRecords++;
 			}
 		}
+
 		producer.send(record, callback);
 	}
 
