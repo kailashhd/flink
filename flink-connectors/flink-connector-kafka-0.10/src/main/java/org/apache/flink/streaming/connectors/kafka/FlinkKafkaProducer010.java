@@ -331,7 +331,7 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 			}
 		}
 		// Add a new callback so that the latency can be calculated.
-		long startTime = System.currentTimeMillis();
+		long startTime = System.nanoTime();
 		Callback cb = new LatencyCallback<>(startTime,this);
 		internalProducer.producer.send(record, cb);
 	}
@@ -494,8 +494,8 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 			this.wrappedProducerBase = (FlinkKafkaProducerBase) producer.userFunction;
 		}
 		public void onCompletion(RecordMetadata metadata, Exception exception) {
-			long now = System.currentTimeMillis();
-			long latency = (now - start);
+			long now = System.nanoTime();
+			long latency = (now - start)/10^6;
 			wrappedProducerBase.histogram.update(latency);
 			if (exception != null) {
 				exception.printStackTrace();
