@@ -17,18 +17,13 @@
 
 package org.apache.flink.streaming.connectors.kafka;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-
+import com.codahale.metrics.SlidingWindowReservoir;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.java.ClosureCleaner;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
+import org.apache.flink.metrics.Histogram;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
@@ -41,20 +36,19 @@ import org.apache.flink.streaming.connectors.kafka.partitioner.FlinkKafkaDelegat
 import org.apache.flink.streaming.connectors.kafka.partitioner.FlinkKafkaPartitioner;
 import org.apache.flink.streaming.util.serialization.KeyedSerializationSchema;
 import org.apache.flink.util.NetUtils;
-import org.apache.flink.dropwizard.metrics.DropwizardHistogramWrapper;
-import org.apache.flink.metrics.Histogram;
-import com.codahale.metrics.SlidingWindowReservoir;
-import org.apache.kafka.clients.producer.Callback;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.File;
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.io.PrintWriter;
 
 import static java.util.Objects.requireNonNull;
 
@@ -75,6 +69,8 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 	private static final long serialVersionUID = 1L;
 
 	public Histogram histogram;
+
+	private PrintWriter pw;
 
 	/**
 	 * Configuration key for disabling the metrics reporting.
@@ -200,6 +196,12 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 		this.flushOnCheckpoint = flush;
 	}
 
+	public void writeLatencyToFile(Long latency) {
+		LOG.info("The latency is {}", latency.toString());
+		pw.append(String.format("%s,%s\n", LocalDateTime.now().toString(), latency.toString()));
+		pw.flush();
+	}
+
 	/**
 	 * Used for testing only
 	 */
@@ -226,13 +228,28 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 		if(null != flinkKafkaPartitioner) {
 			if(flinkKafkaPartitioner instanceof FlinkKafkaDelegatePartitioner) {
 				((FlinkKafkaDelegatePartitioner) flinkKafkaPartitioner).setPartitions(
-					getPartitionsByTopic(this.defaultTopicId, this.producer));
+						getPartitionsByTopic(this.defaultTopicId, this.producer));
 			}
 			flinkKafkaPartitioner.open(ctx.getIndexOfThisSubtask(), ctx.getNumberOfParallelSubtasks());
 		}
 
+		try {
+			String filename = String.format("/var/metric/latency-%d.txt", ctx.getIndexOfThisSubtask() + 1);
+			File file = new File(filename);
+			boolean file_created = file.createNewFile();
+			if (file_created) {
+				LOG.info("Latency file has been created successfully");
+			} else {
+				LOG.info("File already present at the specified location");
+			}
+			pw = new PrintWriter(file);
+		} catch (IOException e) {
+			LOG.warn("Exception Occurred:");
+			LOG.warn(e.toString());
+		}
+
 		LOG.info("Starting FlinkKafkaProducer ({}/{}) to produce into default topic {}",
-			ctx.getIndexOfThisSubtask() + 1, ctx.getNumberOfParallelSubtasks(), defaultTopicId);
+				ctx.getIndexOfThisSubtask() + 1, ctx.getNumberOfParallelSubtasks(), defaultTopicId);
 
 		// register Kafka metrics to Flink accumulators
 		if (!Boolean.parseBoolean(producerConfig.getProperty(KEY_DISABLE_METRICS, "false"))) {
@@ -258,7 +275,6 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 			callback = new Callback() {
 				@Override
 				public void onCompletion(RecordMetadata metadata, Exception e) {
-					LOG.info("This is where stuff is written");
 					if (e != null) {
 						LOG.error("Error while sending record to Kafka: " + e.getMessage(), e);
 					}
@@ -270,7 +286,6 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 			callback = new Callback() {
 				@Override
 				public void onCompletion(RecordMetadata metadata, Exception exception) {
-					// LOG.info("This is where stuff is written");
 					if (exception != null && asyncException == null) {
 						asyncException = exception;
 					}
@@ -309,17 +324,16 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 			record = new ProducerRecord<>(targetTopic, serializedKey, serializedValue);
 		} else {
 			record = new ProducerRecord<>(
-				targetTopic,
-				flinkKafkaPartitioner.partition(next, serializedKey, serializedValue, targetTopic, partitions),
-				serializedKey,
-				serializedValue);
+					targetTopic,
+					flinkKafkaPartitioner.partition(next, serializedKey, serializedValue, targetTopic, partitions),
+					serializedKey,
+					serializedValue);
 		}
 		if (flushOnCheckpoint) {
 			synchronized (pendingRecordsLock) {
 				pendingRecords++;
 			}
 		}
-
 		producer.send(record, callback);
 	}
 

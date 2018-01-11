@@ -91,9 +91,9 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 * @param producerConfig Properties with the producer configuration.
 	 */
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-											String topicId,
-											KeyedSerializationSchema<T> serializationSchema,
-											Properties producerConfig) {
+																					String topicId,
+																					KeyedSerializationSchema<T> serializationSchema,
+																					Properties producerConfig) {
 		return writeToKafkaWithTimestamps(inStream, topicId, serializationSchema, producerConfig, new FlinkFixedPartitioner<T>());
 	}
 
@@ -110,9 +110,9 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 * @param producerConfig Properties with the producer configuration.
 	 */
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-		String topicId,
-		SerializationSchema<T> serializationSchema,
-		Properties producerConfig) {
+																					String topicId,
+																					SerializationSchema<T> serializationSchema,
+																					Properties producerConfig) {
 		return writeToKafkaWithTimestamps(inStream, topicId, new KeyedSerializationSchemaWrapper<>(serializationSchema), producerConfig, new FlinkFixedPartitioner<T>());
 	}
 
@@ -129,10 +129,10 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 *  @param customPartitioner A serializable partitioner for assigning messages to Kafka partitions.
 	 */
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-											String topicId,
-											KeyedSerializationSchema<T> serializationSchema,
-											Properties producerConfig,
-											FlinkKafkaPartitioner<T> customPartitioner) {
+																					String topicId,
+																					KeyedSerializationSchema<T> serializationSchema,
+																					Properties producerConfig,
+																					FlinkKafkaPartitioner<T> customPartitioner) {
 
 		GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
 		FlinkKafkaProducer010<T> kafkaProducer = new FlinkKafkaProducer010<>(topicId, serializationSchema, producerConfig, customPartitioner);
@@ -248,14 +248,14 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 	 */
 	@Deprecated
 	public static <T> FlinkKafkaProducer010Configuration<T> writeToKafkaWithTimestamps(DataStream<T> inStream,
-											String topicId,
-											KeyedSerializationSchema<T> serializationSchema,
-											Properties producerConfig,
-											KafkaPartitioner<T> customPartitioner) {
+																					String topicId,
+																					KeyedSerializationSchema<T> serializationSchema,
+																					Properties producerConfig,
+																					KafkaPartitioner<T> customPartitioner) {
 
 		GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
 		FlinkKafkaProducer010<T> kafkaProducer =
-			new FlinkKafkaProducer010<>(topicId, serializationSchema, producerConfig, new FlinkKafkaDelegatePartitioner<>(customPartitioner));
+				new FlinkKafkaProducer010<>(topicId, serializationSchema, producerConfig, new FlinkKafkaDelegatePartitioner<>(customPartitioner));
 		SingleOutputStreamOperator<Object> transformation = inStream.transform("FlinKafkaProducer 0.10.x", objectTypeInfo, kafkaProducer);
 		return new FlinkKafkaProducer010Configuration<>(transformation, kafkaProducer);
 	}
@@ -495,7 +495,10 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 		}
 		public void onCompletion(RecordMetadata metadata, Exception exception) {
 			long now = System.nanoTime();
-			long latency = (now - start)/10^6;
+			long convertToMs = 1000;
+			long latency = (now - start)/convertToMs/convertToMs;
+			LOG.info("Writing latency to a file");
+			wrappedProducerBase.writeLatencyToFile(latency);
 			wrappedProducerBase.histogram.update(latency);
 			if (exception != null) {
 				exception.printStackTrace();
