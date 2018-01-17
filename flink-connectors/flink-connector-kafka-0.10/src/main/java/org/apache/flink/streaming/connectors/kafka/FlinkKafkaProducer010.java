@@ -255,7 +255,7 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 
 		GenericTypeInfo<Object> objectTypeInfo = new GenericTypeInfo<>(Object.class);
 		FlinkKafkaProducer010<T> kafkaProducer =
-				new FlinkKafkaProducer010<>(topicId, serializationSchema, producerConfig, new FlinkKafkaDelegatePartitioner<>(customPartitioner));
+			new FlinkKafkaProducer010<>(topicId, serializationSchema, producerConfig, new FlinkKafkaDelegatePartitioner<>(customPartitioner));
 		SingleOutputStreamOperator<Object> transformation = inStream.transform("FlinKafkaProducer 0.10.x", objectTypeInfo, kafkaProducer);
 		return new FlinkKafkaProducer010Configuration<>(transformation, kafkaProducer);
 	}
@@ -497,12 +497,13 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 			long now = System.nanoTime();
 			long convertToMs = 1000;
 			long latency = (now - start)/convertToMs/convertToMs;
-			LOG.info("Writing latency to a file");
-			wrappedProducerBase.writeLatencyToFile(latency);
+			// LOG.info("Writing latency to a file");
+			wrappedProducerBase.writeLatencyToHashMap(latency);
 			wrappedProducerBase.histogram.update(latency);
 			if (exception != null) {
 				exception.printStackTrace();
 			}
+			wrappedProducerBase.acknowledgeMessage();
 		}
 	}
 }

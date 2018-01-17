@@ -49,6 +49,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.io.PrintWriter;
+import java.util.concurrent.Semaphore;
 
 import static java.util.Objects.requireNonNull;
 
@@ -71,6 +72,10 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 	public Histogram histogram;
 
 	private PrintWriter pw;
+	private boolean startRecording;
+	private HashMap<Long,Long> countOccurrence;
+	private Semaphore semaphore;
+
 
 	/**
 	 * Configuration key for disabling the metrics reporting.
@@ -196,10 +201,75 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 		this.flushOnCheckpoint = flush;
 	}
 
-	public void writeLatencyToFile(Long latency) {
-		LOG.info("The latency is {}", latency.toString());
-		pw.append(String.format("%s,%s\n", LocalDateTime.now().toString(), latency.toString()));
-		pw.flush();
+	private class StartRecording implements Runnable {
+		private int timeSleep;
+		StartRecording(int timeToSleep) {
+			timeSleep = timeToSleep;
+		}
+
+		@Override
+		public void run() {
+			try {
+				Thread.sleep(timeSleep);
+				LOG.info("Starting to record now");
+				startRecording = true;
+			} catch (Exception e) {
+				LOG.warn("Sleep Exception Occurred:");
+				LOG.warn(e.toString());
+			}
+		}
+	}
+
+	private class FlushHashMapToFile implements Runnable {
+		private int timeSleep;
+		FlushHashMapToFile(int timeToSleep) {
+			timeSleep = timeToSleep;
+		}
+
+		@Override
+		public void run() {
+			try {
+				while(true) {
+					Thread.sleep(timeSleep);
+					LOG.warn("Writing to the file");
+					semaphore.acquire();
+					try {
+						countOccurrence.forEach((k, v) -> pw.append(String.format("%s,%s\n", k.toString(), v.toString())));
+						pw.append("\n");
+						pw.flush();
+						countOccurrence.clear();
+					} finally {
+						semaphore.release();
+					}
+				}
+			} catch (Exception e) {
+				LOG.warn("FlushHashMap Exception Occurred:");
+				LOG.warn(e.toString());
+			}
+		}
+	}
+
+	public void writeLatencyToHashMap(Long latency) {
+		// LOG.info("The latency is {}", latency.toString());
+		try {
+			if (startRecording) {
+				semaphore.acquire();
+				try {
+					if (countOccurrence.containsKey(latency)) {
+						countOccurrence.put(latency, countOccurrence.get(latency) + 1);
+					} else {
+						countOccurrence.put(latency, 1L);
+					}
+				} finally {
+					semaphore.release();
+				}
+			}
+		} catch (Exception e) {
+			LOG.warn("writeLatencyToHashMap Exception Occurred:");
+			LOG.warn(e.toString());
+			semaphore.release();
+		}
+
 	}
 
 	/**
@@ -223,7 +293,8 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 			new com.codahale.metrics.Histogram(new SlidingWindowReservoir(500));
 		this.histogram = ctx.getMetricGroup()
 			.histogram("LatencyHistogram", new DropwizardHistogramWrapper(histogram));
-
+		countOccurrence= new HashMap<>();
+		semaphore = new Semaphore(1);
 
 		if(null != flinkKafkaPartitioner) {
 			if(flinkKafkaPartitioner instanceof FlinkKafkaDelegatePartitioner) {
@@ -250,6 +321,8 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 
 		LOG.info("Starting FlinkKafkaProducer ({}/{}) to produce into default topic {}",
 				ctx.getIndexOfThisSubtask() + 1, ctx.getNumberOfParallelSubtasks(), defaultTopicId);
+		(new Thread(new StartRecording(600000))).start();
+		(new Thread(new FlushHashMapToFile(60000))).start();
 
 		// register Kafka metrics to Flink accumulators
 		if (!Boolean.parseBoolean(producerConfig.getProperty(KEY_DISABLE_METRICS, "false"))) {
@@ -350,7 +423,7 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 
 	// ------------------- Logic for handling checkpoint flushing -------------------------- //
 
-	private void acknowledgeMessage() {
+	public void acknowledgeMessage() {
 		if (flushOnCheckpoint) {
 			synchronized (pendingRecordsLock) {
 				pendingRecords--;
