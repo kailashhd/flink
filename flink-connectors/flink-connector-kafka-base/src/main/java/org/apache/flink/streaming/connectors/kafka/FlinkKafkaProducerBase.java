@@ -423,7 +423,7 @@ public abstract class FlinkKafkaProducerBase<IN> extends RichSinkFunction<IN> im
 
 	// ------------------- Logic for handling checkpoint flushing -------------------------- //
 
-	public void acknowledgeMessage() {
+	private void acknowledgeMessage() {
 		if (flushOnCheckpoint) {
 			synchronized (pendingRecordsLock) {
 				pendingRecords--;

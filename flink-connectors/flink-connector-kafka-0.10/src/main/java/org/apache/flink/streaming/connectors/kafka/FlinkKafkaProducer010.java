@@ -503,7 +503,7 @@ public class FlinkKafkaProducer010<T> extends StreamSink<T> implements SinkFunct
 			if (exception != null) {
 				exception.printStackTrace();
 			}
-			wrappedProducerBase.acknowledgeMessage();
+			wrappedProducerBase.callback.onCompletion(metadata, exception);
 		}
 	}
 }
