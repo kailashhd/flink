@@ -16,25 +16,36 @@
  * limitations under the License.
  */
 
-package org.apache.flink.formats.parquet;
+package org.apache.flink.formats.parquet.proto;
+
+import org.apache.flink.formats.parquet.ParquetBuilder;
+import org.apache.flink.formats.parquet.ParquetWriterFactory;
 
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.io.OutputFile;
-import org.apache.hadoop.fs.Path;
 
 import java.io.IOException;
-import java.io.Serializable;
 
 /**
- * A builder to create a {@link ParquetWriter} from a Parquet {@link OutputFile}.
- *
- * @param <T> The type of elements written by the writer.
+ * Convenience builder to create {@link ParquetWriterFactory} instances for the different Avro types.
  */
-@FunctionalInterface
-public interface ParquetBuilder<T> extends Serializable {
+public class ParquetProtoWriters {
+	private static final int pageSize = 64 * 1024;
 
-	/**
-	 * Creates and configures a parquet writer to the given output file.
-	 */
-	ParquetWriter<T> createWriter(OutputFile out) throws IOException;
+	public static <T> ParquetWriterFactory<T> forType(final Class<T> protoClass) {
+		ParquetBuilder builder = null;
+		try {
+			builder = (out) -> createProtoParquetWriter(protoClass, out);
+		} catch(Exception e) {
+			e.printStackTrace();
+		}
+		return new ParquetWriterFactory<T>(builder);
+	}
+
+	private static <T> ParquetWriter<T> createProtoParquetWriter(Class<T> protoClass, OutputFile out) throws IOException {
+		return FlinkProtoParquetWriter.<T>builder(out)
+			.withProtoMessage(protoClass)
+			.build();
+
+	}
 }
