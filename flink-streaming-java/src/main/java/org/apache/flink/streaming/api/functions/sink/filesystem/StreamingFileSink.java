@@ -185,23 +185,23 @@ public class StreamingFileSink<IN>
 
 		private static final long serialVersionUID = 1L;
 
-		private final long bucketCheckInterval;
+		protected final long bucketCheckInterval;
 
-		private final Path basePath;
+		protected final Path basePath;
 
-		private final Encoder<IN> encoder;
+		protected final Encoder<IN> encoder;
 
-		private final BucketAssigner<IN, BucketID> bucketAssigner;
+		protected final BucketAssigner<IN, BucketID> bucketAssigner;
 
-		private final RollingPolicy<IN, BucketID> rollingPolicy;
+		protected final RollingPolicy<IN, BucketID> rollingPolicy;
 
-		private final BucketFactory<IN, BucketID> bucketFactory;
+		protected final BucketFactory<IN, BucketID> bucketFactory;
 
-		RowFormatBuilder(Path basePath, Encoder<IN> encoder, BucketAssigner<IN, BucketID> bucketAssigner) {
+		public RowFormatBuilder(Path basePath, Encoder<IN> encoder, BucketAssigner<IN, BucketID> bucketAssigner) {
 			this(basePath, encoder, bucketAssigner, DefaultRollingPolicy.create().build(), 60L * 1000L, new DefaultBucketFactoryImpl<>());
 		}
 
-		private RowFormatBuilder(
+		protected RowFormatBuilder(
 				Path basePath,
 				Encoder<IN> encoder,
 				BucketAssigner<IN, BucketID> assigner,
@@ -262,21 +262,21 @@ public class StreamingFileSink<IN>
 
 		private static final long serialVersionUID = 1L;
 
-		private final long bucketCheckInterval;
+		protected final long bucketCheckInterval;
 
-		private final Path basePath;
+		protected final Path basePath;
 
-		private final BulkWriter.Factory<IN> writerFactory;
+		protected final BulkWriter.Factory<IN> writerFactory;
 
-		private final BucketAssigner<IN, BucketID> bucketAssigner;
+		protected final BucketAssigner<IN, BucketID> bucketAssigner;
 
-		private final BucketFactory<IN, BucketID> bucketFactory;
+		protected final BucketFactory<IN, BucketID> bucketFactory;
 
-		BulkFormatBuilder(Path basePath, BulkWriter.Factory<IN> writerFactory, BucketAssigner<IN, BucketID> assigner) {
+		public BulkFormatBuilder(Path basePath, BulkWriter.Factory<IN> writerFactory, BucketAssigner<IN, BucketID> assigner) {
 			this(basePath, writerFactory, assigner, 60L * 1000L, new DefaultBucketFactoryImpl<>());
 		}
 
-		private BulkFormatBuilder(
+		protected BulkFormatBuilder(
 				Path basePath,
 				BulkWriter.Factory<IN> writerFactory,
 				BucketAssigner<IN, BucketID> assigner,
